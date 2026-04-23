@@ -4,10 +4,12 @@ import {
     createInitialGameState,
     getLegalMoves,
     isGameLocked,
+    PROMOTION_PIECE_TYPES,
     type Board,
     type Color,
     type GameState,
     type Piece,
+    type PromotionPieceType,
     type Square,
 } from './game'
 
@@ -37,6 +39,10 @@ function createSeededState(board: Board, turn: Color): GameState {
 
 function moveListHas(moves: Square[], target: Square): boolean {
     return moves.some((move) => move.row === target.row && move.col === target.col)
+}
+
+function promotionSuffix(pieceType: PromotionPieceType): string {
+    return pieceType[0].toUpperCase()
 }
 
 describe('pawn movement edge cases', () => {
@@ -170,28 +176,122 @@ describe("Fool's Mate regression", () => {
     })
 })
 
-describe('unsupported final-rank pawn handling', () => {
-    it('enters unsupported state and reset initialization restores the game state', () => {
+describe('pawn promotion', () => {
+    it.each(PROMOTION_PIECE_TYPES)(
+        'promotes a white pawn to %s and records promotion notation',
+        (pieceType) => {
+            const board = createEmptyBoard()
+            placePiece(board, square(7, 4), { color: 'white', type: 'king' })
+            placePiece(board, square(0, 7), { color: 'black', type: 'king' })
+            placePiece(board, square(1, 0), { color: 'white', type: 'pawn' })
+
+            const nextState = applyMove(
+                createSeededState(board, 'white'),
+                square(1, 0),
+                square(0, 0),
+                pieceType,
+            )
+
+            expect(nextState.board[0][0]).toEqual({ color: 'white', type: pieceType })
+            expect(nextState.board[1][0]).toBeNull()
+            expect(nextState.turn).toBe('black')
+            expect(nextState.history.at(-1)?.notation).toBe(
+                `a7-a8=${promotionSuffix(pieceType)}`,
+            )
+        },
+    )
+
+    it.each(PROMOTION_PIECE_TYPES)(
+        'promotes a black pawn to %s and records promotion notation',
+        (pieceType) => {
+            const board = createEmptyBoard()
+            placePiece(board, square(7, 4), { color: 'white', type: 'king' })
+            placePiece(board, square(0, 7), { color: 'black', type: 'king' })
+            placePiece(board, square(6, 0), { color: 'black', type: 'pawn' })
+
+            const nextState = applyMove(
+                createSeededState(board, 'black'),
+                square(6, 0),
+                square(7, 0),
+                pieceType,
+            )
+
+            expect(nextState.board[7][0]).toEqual({ color: 'black', type: pieceType })
+            expect(nextState.board[6][0]).toBeNull()
+            expect(nextState.turn).toBe('white')
+            expect(nextState.history.at(-1)?.notation).toBe(
+                `a2-a1=${promotionSuffix(pieceType)}`,
+            )
+        },
+    )
+
+    it('supports promotion by capture on the final rank', () => {
+        const board = createEmptyBoard()
+        placePiece(board, square(7, 4), { color: 'white', type: 'king' })
+        placePiece(board, square(0, 0), { color: 'black', type: 'king' })
+        placePiece(board, square(1, 6), { color: 'white', type: 'pawn' })
+        placePiece(board, square(0, 7), { color: 'black', type: 'rook' })
+
+        const promotedState = applyMove(
+            createSeededState(board, 'white'),
+            square(1, 6),
+            square(0, 7),
+            'rook',
+        )
+
+        expect(promotedState.board[0][7]).toEqual({ color: 'white', type: 'rook' })
+        expect(promotedState.board[1][6]).toBeNull()
+        expect(promotedState.history.at(-1)?.notation).toBe('g7xh8=R')
+    })
+
+    it('rejects a promotion move when no piece choice is provided', () => {
         const board = createEmptyBoard()
         placePiece(board, square(7, 4), { color: 'white', type: 'king' })
         placePiece(board, square(0, 7), { color: 'black', type: 'king' })
         placePiece(board, square(1, 0), { color: 'white', type: 'pawn' })
 
-        const unsupportedState = applyMove(
+        const seededState = createSeededState(board, 'white')
+        const nextState = applyMove(seededState, square(1, 0), square(0, 0))
+
+        expect(nextState).toBe(seededState)
+        expect(nextState.history).toHaveLength(0)
+    })
+
+    it('evaluates checkmate using the promoted piece instead of a pawn placeholder', () => {
+        const board = createEmptyBoard()
+        placePiece(board, square(0, 7), { color: 'black', type: 'king' })
+        placePiece(board, square(1, 5), { color: 'white', type: 'king' })
+        placePiece(board, square(1, 6), { color: 'white', type: 'pawn' })
+
+        const promotedState = applyMove(
+            createSeededState(board, 'white'),
+            square(1, 6),
+            square(0, 6),
+            'queen',
+        )
+
+        expect(promotedState.board[0][6]).toEqual({ color: 'white', type: 'queen' })
+        expect(promotedState.status.kind).toBe('checkmate')
+        if (promotedState.status.kind === 'checkmate') {
+            expect(promotedState.status.winner).toBe('white')
+        }
+        expect(isGameLocked(promotedState.status)).toBe(true)
+    })
+
+    it('reset initialization restores the normal starting position after a promotion move', () => {
+        const board = createEmptyBoard()
+        placePiece(board, square(7, 4), { color: 'white', type: 'king' })
+        placePiece(board, square(0, 7), { color: 'black', type: 'king' })
+        placePiece(board, square(1, 0), { color: 'white', type: 'pawn' })
+
+        const promotedState = applyMove(
             createSeededState(board, 'white'),
             square(1, 0),
             square(0, 0),
+            'queen',
         )
 
-        expect(unsupportedState.status.kind).toBe('unsupported')
-        expect(isGameLocked(unsupportedState.status)).toBe(true)
-
-        const lockedMoveAttempt = applyMove(
-            unsupportedState,
-            square(0, 7),
-            square(1, 7),
-        )
-        expect(lockedMoveAttempt).toBe(unsupportedState)
+        expect(promotedState.board[0][0]).toEqual({ color: 'white', type: 'queen' })
 
         const resetState = createInitialGameState()
         expect(resetState.status.kind).toBe('active')

@@ -50,7 +50,8 @@
 }
 
 .reset-button:focus-visible,
-.square:focus-visible {
+.square:focus-visible,
+.promotion-button:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.35);
   outline-offset: 3px;
 }
@@ -163,6 +164,49 @@
   font-size: clamp(1.85rem, 4vw, 3rem);
   line-height: 1;
   color: #0f172a;
+}
+
+.promotion-chooser {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background: #eff6ff;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+}
+
+.promotion-copy {
+  margin: 0 0 0.85rem;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.promotion-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.promotion-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: none;
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+}
+
+.promotion-button:hover {
+  background: #dbeafe;
+}
+
+.promotion-piece {
+  font-size: 1.35rem;
+  line-height: 1;
 }
 
 .board-note,
