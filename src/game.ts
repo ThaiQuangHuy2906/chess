@@ -1,5 +1,6 @@
 export type Color = 'white' | 'black'
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn'
+export type PromotionPieceType = 'queen' | 'rook' | 'bishop' | 'knight'
 
 export interface Piece {
     color: Color
@@ -37,6 +38,12 @@ export interface GameState {
 }
 
 const BOARD_SIZE = 8
+export const PROMOTION_PIECE_TYPES: PromotionPieceType[] = [
+    'queen',
+    'rook',
+    'bishop',
+    'knight',
+]
 const BACK_RANK: PieceType[] = [
     'rook',
     'knight',
@@ -47,8 +54,6 @@ const BACK_RANK: PieceType[] = [
     'knight',
     'rook',
 ]
-const UNSUPPORTED_PROMOTION_MESSAGE =
-    'A pawn reached the final rank. Promotion is outside this MVP. Reset to start a new game.'
 
 export function createInitialGameState(): GameState {
     const board = createInitialBoard()
@@ -103,10 +108,25 @@ export function getLegalMoves(
     })
 }
 
+export function requiresPromotionChoice(
+    board: Board,
+    from: Square,
+    to: Square,
+): boolean {
+    const piece = getPieceAt(board, from)
+
+    if (!piece || piece.type !== 'pawn') {
+        return false
+    }
+
+    return to.row === (piece.color === 'white' ? 0 : BOARD_SIZE - 1)
+}
+
 export function applyMove(
     gameState: GameState,
     from: Square,
     to: Square,
+    promotion?: PromotionPieceType,
 ): GameState {
     if (isGameLocked(gameState.status)) {
         return gameState
@@ -124,9 +144,27 @@ export function applyMove(
         return gameState
     }
 
+    const promotionChoice = requiresPromotionChoice(gameState.board, from, to)
+        ? promotion
+        : undefined
+
+    if (
+        requiresPromotionChoice(gameState.board, from, to) &&
+        (!promotionChoice || !PROMOTION_PIECE_TYPES.includes(promotionChoice))
+    ) {
+        return gameState
+    }
+
     const capturedPiece = getPieceAt(gameState.board, to)
     const nextBoard = simulateMove(gameState.board, from, to)
     const nextTurn = oppositeColor(gameState.turn)
+
+    if (promotionChoice) {
+        nextBoard[to.row][to.col] = {
+            color: gameState.turn,
+            type: promotionChoice,
+        }
+    }
 
     return {
         board: nextBoard,
@@ -135,7 +173,7 @@ export function applyMove(
             ...gameState.history,
             {
                 color: gameState.turn,
-                notation: createNotation(from, to, capturedPiece),
+                notation: createNotation(from, to, capturedPiece, promotionChoice),
             },
         ],
         status: evaluateGameStatus(nextBoard, nextTurn),
@@ -507,15 +545,6 @@ function hasAnyLegalMove(board: Board, color: Color): boolean {
 }
 
 function evaluateGameStatus(board: Board, turn: Color): GameStatus {
-    const unsupportedMessage = getUnsupportedMessage(board)
-
-    if (unsupportedMessage) {
-        return {
-            kind: 'unsupported',
-            message: unsupportedMessage,
-        }
-    }
-
     const inCheck = isKingInCheck(board, turn)
 
     if (hasAnyLegalMove(board, turn)) {
@@ -543,23 +572,19 @@ function evaluateGameStatus(board: Board, turn: Color): GameStatus {
     }
 }
 
-function getUnsupportedMessage(board: Board): string | null {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-        const topPiece = board[0][col]
-        const bottomPiece = board[BOARD_SIZE - 1][col]
-
-        if (topPiece?.type === 'pawn' || bottomPiece?.type === 'pawn') {
-            return UNSUPPORTED_PROMOTION_MESSAGE
-        }
-    }
-
-    return null
-}
-
 function createNotation(
     from: Square,
     to: Square,
     capturedPiece: Piece | null,
+    promotion?: PromotionPieceType,
 ): string {
-    return `${squareToAlgebraic(from)}${capturedPiece ? 'x' : '-'}${squareToAlgebraic(to)}`
+    return `${squareToAlgebraic(from)}${capturedPiece ? 'x' : '-'}${squareToAlgebraic(to)}${getPromotionSuffix(promotion)}`
+}
+
+function getPromotionSuffix(promotion?: PromotionPieceType): string {
+    if (!promotion) {
+        return ''
+    }
+
+    return `=${promotion[0].toUpperCase()}`
 }
