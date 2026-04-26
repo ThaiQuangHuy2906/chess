@@ -43,14 +43,14 @@ h2 {
 }
 
 #root {
-  width: min(1100px, calc(100% - 2rem));
+  width: min(1540px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 1.5rem 0 2rem;
 }
 
 @media (max-width: 560px) {
   #root {
-    width: min(100% - 1rem, 1100px);
+    width: min(100% - 1rem, 1540px);
     padding: 1rem 0 1.5rem;
   }
 }

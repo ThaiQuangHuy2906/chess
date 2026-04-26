@@ -237,67 +237,98 @@ function App() {
                 </div>
             </header>
 
-            <section className="panel controls-panel" aria-label="Điều khiển ván cờ">
-                <div className="control-group">
-                    <span className="label">Chế độ</span>
-                    <div className="segmented-control">
-                        <button
-                            type="button"
-                            className={playMode === 'pvp' ? 'segment segment--active' : 'segment'}
-                            onClick={() => handleModeChange('pvp')}
-                        >
-                            PvP tại máy
-                        </button>
-                        <button
-                            type="button"
-                            className={
-                                playMode === 'human-ai' ? 'segment segment--active' : 'segment'
-                            }
-                            onClick={() => handleModeChange('human-ai')}
-                        >
-                            Người vs AI
-                        </button>
-                    </div>
-                </div>
+            <div className="game-workspace">
+                <aside className="side-rail side-rail--left">
+                    <section className="panel controls-panel" aria-label="Điều khiển ván cờ">
+                        <div className="control-group">
+                            <span className="label">Chế độ</span>
+                            <div className="segmented-control">
+                                <button
+                                    type="button"
+                                    className={playMode === 'pvp' ? 'segment segment--active' : 'segment'}
+                                    onClick={() => handleModeChange('pvp')}
+                                >
+                                    PvP tại máy
+                                </button>
+                                <button
+                                    type="button"
+                                    className={
+                                        playMode === 'human-ai' ? 'segment segment--active' : 'segment'
+                                    }
+                                    onClick={() => handleModeChange('human-ai')}
+                                >
+                                    Người vs AI
+                                </button>
+                            </div>
+                        </div>
 
-                <div className="control-group">
-                    <span className="label">Bạn cầm</span>
-                    <div className="segmented-control">
-                        {(['white', 'black'] as Color[]).map((color) => (
-                            <button
-                                key={color}
-                                type="button"
-                                className={
-                                    humanColor === color ? 'segment segment--active' : 'segment'
-                                }
-                                disabled={playMode === 'pvp'}
-                                onClick={() => handleHumanColorChange(color)}
-                            >
-                                {formatColorVi(color)}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                        <div className="control-group">
+                            <span className="label">Bạn cầm</span>
+                            <div className="segmented-control">
+                                {(['white', 'black'] as Color[]).map((color) => (
+                                    <button
+                                        key={color}
+                                        type="button"
+                                        className={
+                                            humanColor === color ? 'segment segment--active' : 'segment'
+                                        }
+                                        disabled={playMode === 'pvp'}
+                                        onClick={() => handleHumanColorChange(color)}
+                                    >
+                                        {formatColorVi(color)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
 
-                <div className="control-group">
-                    <span className="label">Độ sâu AI</span>
-                    <div className="segmented-control">
-                        {(['easy', 'normal', 'hard'] as AiLevel[]).map((level) => (
-                            <button
-                                key={level}
-                                type="button"
-                                className={aiLevel === level ? 'segment segment--active' : 'segment'}
-                                disabled={playMode === 'pvp'}
-                                onClick={() => setAiLevel(level)}
-                            >
-                                {AI_LEVEL_LABELS[level]}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </section>
+                        <div className="control-group">
+                            <span className="label">Độ sâu AI</span>
+                            <div className="segmented-control">
+                                {(['easy', 'normal', 'hard'] as AiLevel[]).map((level) => (
+                                    <button
+                                        key={level}
+                                        type="button"
+                                        className={aiLevel === level ? 'segment segment--active' : 'segment'}
+                                        disabled={playMode === 'pvp'}
+                                        onClick={() => setAiLevel(level)}
+                                    >
+                                        {AI_LEVEL_LABELS[level]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </section>
 
-            <div className="layout">
+                    <section className="panel info-panel">
+                        <h2>Lựa chọn</h2>
+                        <p className="selection-copy">
+                            {pendingPromotion
+                                ? `Đang chờ phong cấp từ ${squareToAlgebraic(pendingPromotion.from)} đến ${squareToAlgebraic(pendingPromotion.to)}. Chọn hậu, xe, tượng hoặc mã để hoàn tất.`
+                                : isAiTurn
+                                    ? `AI bên ${formatColorVi(aiColor)} đang chọn nước.`
+                                    : selectedSquare && selectedPiece
+                                        ? `${formatColorVi(selectedPiece.color)} ${formatPieceVi(selectedPiece.type)} tại ${squareToAlgebraic(selectedSquare)}. Có ${legalMoves.length} nước hợp lệ.`
+                                        : gameLocked
+                                            ? 'Ván đã kết thúc. Bấm Ván mới để chơi lại.'
+                                            : 'Chọn một quân của bên đang tới lượt để xem nước hợp lệ.'}
+                        </p>
+                    </section>
+
+                    <section className="panel info-panel">
+                        <h2>Coach tiếng Việt</h2>
+                        {lastAgentDecision && playMode === 'human-ai' ? (
+                            <p className="coach-copy">
+                                AI vừa đi {lastAgentDecision.move.san}. {lastAgentDecision.reflection}
+                            </p>
+                        ) : null}
+                        {coachInsight ? (
+                            <CoachPanel insight={coachInsight} turn={gameState.turn} />
+                        ) : (
+                            <p className="empty-state">{statusMessage}</p>
+                        )}
+                    </section>
+                </aside>
+
                 <section className="panel board-panel">
                     <div className="status-row">
                         <div>
@@ -378,22 +409,7 @@ function App() {
                     ) : null}
                 </section>
 
-                <aside className="sidebar">
-                    <section className="panel info-panel">
-                        <h2>Lựa chọn</h2>
-                        <p className="selection-copy">
-                            {pendingPromotion
-                                ? `Đang chờ phong cấp từ ${squareToAlgebraic(pendingPromotion.from)} đến ${squareToAlgebraic(pendingPromotion.to)}. Chọn hậu, xe, tượng hoặc mã để hoàn tất.`
-                                : isAiTurn
-                                    ? `AI bên ${formatColorVi(aiColor)} đang chọn nước.`
-                                    : selectedSquare && selectedPiece
-                                        ? `${formatColorVi(selectedPiece.color)} ${formatPieceVi(selectedPiece.type)} tại ${squareToAlgebraic(selectedSquare)}. Có ${legalMoves.length} nước hợp lệ.`
-                                        : gameLocked
-                                            ? 'Ván đã kết thúc. Bấm Ván mới để chơi lại.'
-                                            : 'Chọn một quân của bên đang tới lượt để xem nước hợp lệ.'}
-                        </p>
-                    </section>
-
+                <aside className="side-rail side-rail--right">
                     <section className="panel info-panel agent-panel">
                         <div className="history-header">
                             <h2>Agentic AI Premium</h2>
@@ -408,20 +424,6 @@ function App() {
                             <p className="empty-state">
                                 Agent sẽ hiện mục tiêu, kế hoạch và tự đánh giá khi có thế cờ.
                             </p>
-                        )}
-                    </section>
-
-                    <section className="panel info-panel">
-                        <h2>Coach tiếng Việt</h2>
-                        {lastAgentDecision && playMode === 'human-ai' ? (
-                            <p className="coach-copy">
-                                AI vừa đi {lastAgentDecision.move.san}. {lastAgentDecision.reflection}
-                            </p>
-                        ) : null}
-                        {coachInsight ? (
-                            <CoachPanel insight={coachInsight} turn={gameState.turn} />
-                        ) : (
-                            <p className="empty-state">{statusMessage}</p>
                         )}
                     </section>
 

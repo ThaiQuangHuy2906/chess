@@ -101,15 +101,44 @@
   outline-offset: 3px;
 }
 
-.layout {
+.game-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr);
-  gap: 1.5rem;
+  grid-template-columns:
+    minmax(17rem, 0.78fr)
+    minmax(31rem, 1.24fr)
+    minmax(19rem, 0.98fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.side-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.side-rail .controls-panel {
+  grid-template-columns: 1fr;
+}
+
+.side-rail .agent-summary,
+.side-rail .candidate-card>div {
+  flex-direction: column;
+}
+
+.side-rail .tool-row {
+  grid-template-columns: 1fr;
 }
 
 .board-panel,
 .info-panel {
   padding: 1.25rem;
+}
+
+.board-panel {
+  position: sticky;
+  top: 1rem;
 }
 
 .status-row {
@@ -406,12 +435,6 @@
   font-weight: 700;
 }
 
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
 .history-header,
 .history-row {
   display: grid;
@@ -452,8 +475,12 @@
     align-items: stretch;
   }
 
-  .layout {
+  .game-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .board-panel {
+    position: static;
   }
 
   .controls-panel {
