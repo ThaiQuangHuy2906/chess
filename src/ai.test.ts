@@ -7,7 +7,7 @@ import {
     type GameState,
     type Square,
 } from './game'
-import { createCoachInsight, selectAgentMove } from './ai'
+import { createCoachInsight, createMoveGuidance, selectAgentMove } from './ai'
 
 function algebraicToSquare(value: string): Square {
     return {
@@ -63,6 +63,23 @@ describe('agentic chess AI', () => {
         expect(decision.trace.candidatePlans.length).toBeGreaterThan(0)
         expect(decision.trace.memoryNotes.length).toBeGreaterThan(0)
         expect(decision.trace.reflection).toMatch(/[àáạảãăâđêôơư]/i)
+        expect(decision.trace.principalLine[0]).toMatchObject({
+            san: decision.move.san,
+            from: decision.move.from,
+            to: decision.move.to,
+        })
+        expect(decision.trace.visualCues).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'chosen',
+                    square: decision.move.from,
+                }),
+                expect.objectContaining({
+                    kind: 'chosen',
+                    square: decision.move.to,
+                }),
+            ]),
+        )
     })
 
     it('finds a mate in one at hard level', () => {
@@ -125,6 +142,28 @@ describe('agentic chess AI', () => {
         expect(insight.trace?.principalVariation).toContain(insight.bestMove)
         expect(insight.trace?.tools.map((tool) => tool.name)).toEqual(
             expect.arrayContaining(['observe-position', 'rank-candidates']),
+        )
+    })
+
+    it('creates move guidance for the selected piece', () => {
+        const state = createGameStateFromFen('4k3/8/8/8/8/4q3/4R3/4K3 w - - 0 1')
+
+        const guidance = createMoveGuidance(state, {
+            color: 'white',
+            level: 'normal',
+            from: algebraicToSquare('e2'),
+        })
+
+        expect(guidance?.recommendedMove.san).toBe('Rxe3+')
+        expect(guidance?.summary).toContain('Rxe3+')
+        expect(guidance?.candidateAdvice.length).toBeGreaterThan(0)
+        expect(guidance?.destinationCues).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'recommended',
+                    square: algebraicToSquare('e3'),
+                }),
+            ]),
         )
     })
 })

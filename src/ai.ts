@@ -7,6 +7,7 @@ import {
     type LegalMoveOption,
     type Piece,
     type PieceType,
+    type Square,
 } from './game'
 
 export type AiLevel = 'easy' | 'normal' | 'hard'
@@ -28,6 +29,18 @@ export interface AgentCandidate {
 export interface AgentToolResult {
     name: string
     summary: string
+}
+
+export interface AgentLineMove {
+    san: string
+    from: Square
+    to: Square
+}
+
+export interface AgentVisualCue {
+    square: Square
+    kind: 'chosen' | 'plan' | 'risk'
+    label: string
 }
 
 export interface AgentObservation {
@@ -53,10 +66,34 @@ export interface AgentTrace {
         risk: string
     }>
     principalVariation: string[]
+    principalLine: AgentLineMove[]
+    visualCues: AgentVisualCue[]
     risk: string
     reflection: string
     coach: string
     memoryNotes: string[]
+}
+
+export interface MoveGuidanceOptions extends AgentOptions {
+    from: Square
+}
+
+export interface MoveGuidance {
+    selectedSquare: Square
+    legalMoveCount: number
+    recommendedMove: LegalMoveOption
+    summary: string
+    candidateAdvice: Array<{
+        san: string
+        score: number
+        plan: string
+        risk: string
+    }>
+    destinationCues: Array<{
+        square: Square
+        kind: 'recommended' | 'candidate' | 'risky'
+        label: string
+    }>
 }
 
 export interface AgentDecision {
@@ -112,7 +149,7 @@ const LEVEL_DEPTH: Record<AiLevel, number> = {
 const LEVEL_BRANCHING: Record<AiLevel, number> = {
     easy: 8,
     normal: 12,
-    hard: 16,
+    hard: 12,
 }
 
 export function selectAgentMove(
@@ -128,48 +165,25 @@ export function selectAgentMove(
     const depth = LEVEL_DEPTH[options.level]
     const maxBranching = LEVEL_BRANCHING[options.level]
     const observation = observePosition(gameState, moves, options.color)
-    const orderedMoves = orderMoves(moves)
-    const scoredCandidates = orderedMoves
-        .map((move) => {
-            const nextState = applyMove(gameState, {
-                from: move.from,
-                to: move.to,
-                promotion: move.promotion,
-            })
-            const score = minimax(
-                nextState,
-                depth - 1,
-                Number.NEGATIVE_INFINITY,
-                Number.POSITIVE_INFINITY,
-                options.color,
-                maxBranching,
-            )
-
-            return {
-                move,
-                san: move.san,
-                score,
-                reason: describeMove(move),
-                plan: '',
-                risk: '',
-            }
-        })
-        .sort((left, right) => right.score - left.score)
-    const candidates = scoredCandidates.map((candidate, index) => ({
-        ...candidate,
-        plan: describeCandidatePlan(candidate, observation),
-        risk: describeCandidateRisk(candidate, index, scoredCandidates),
-    }))
+    const candidates = buildAgentCandidates(
+        gameState,
+        moves,
+        options.color,
+        depth,
+        maxBranching,
+        observation,
+    )
 
     const selectedCandidate =
         options.level === 'easy'
             ? selectDeterministicEasyCandidate(candidates, gameState.fen)
             : candidates[0]
-    const principalVariation = buildPrincipalVariation(
+    const principalLine = buildPrincipalLine(
         gameState,
         selectedCandidate.move,
         options.color,
     )
+    const principalVariation = principalLine.map((move) => move.san)
     const goal = chooseGoal(gameState, selectedCandidate, observation)
     const risk = describeDecisionRisk(selectedCandidate, candidates, observation)
     const plan = describeDecisionPlan(selectedCandidate, principalVariation, observation)
@@ -188,6 +202,8 @@ export function selectAgentMove(
             risk: candidate.risk,
         })),
         principalVariation,
+        principalLine,
+        visualCues: buildVisualCues(selectedCandidate.move, principalLine),
         risk,
         reflection,
         coach: buildCoachSuggestion(goal, selectedCandidate, risk, observation),
@@ -250,6 +266,60 @@ export function createCoachInsight(
     }
 }
 
+export function createMoveGuidance(
+    gameState: GameState,
+    options: MoveGuidanceOptions,
+): MoveGuidance | null {
+    if (isGameLocked(gameState.status)) {
+        return null
+    }
+
+    const moves = getAllLegalMoves(gameState).filter((move) =>
+        areSquaresEqual(move.from, options.from),
+    )
+
+    if (moves.length === 0) {
+        return null
+    }
+
+    const depth = LEVEL_DEPTH[options.level]
+    const maxBranching = LEVEL_BRANCHING[options.level]
+    const observation = observePosition(gameState, moves, options.color)
+    const candidates = buildAgentCandidates(
+        gameState,
+        moves,
+        options.color,
+        depth,
+        maxBranching,
+        observation,
+    )
+    const recommended = candidates[0]
+
+    return {
+        selectedSquare: options.from,
+        legalMoveCount: moves.length,
+        recommendedMove: recommended.move,
+        summary: `Gợi ý cho quân đang chọn: ${recommended.san}. ${recommended.plan} ${recommended.risk}`,
+        candidateAdvice: candidates.slice(0, 3).map((candidate) => ({
+            san: candidate.san,
+            score: candidate.score,
+            plan: candidate.plan,
+            risk: candidate.risk,
+        })),
+        destinationCues: candidates.slice(0, 3).map((candidate, index) => ({
+            square: candidate.move.to,
+            kind: index === 0
+                ? 'recommended'
+                : candidate.score < recommended.score - 120
+                    ? 'risky'
+                    : 'candidate',
+            label: index === 0
+                ? `Nước agent khuyên: ${candidate.san}`
+                : `${candidate.san}: ${formatScore(candidate.score)}`,
+        })),
+    }
+}
+
 function observePosition(
     gameState: GameState,
     moves: LegalMoveOption[],
@@ -267,6 +337,48 @@ function observePosition(
         materialSummary: describeMaterialBalance(materialBalance),
         recentPattern: describeRecentPattern(gameState),
     }
+}
+
+function buildAgentCandidates(
+    gameState: GameState,
+    moves: LegalMoveOption[],
+    rootColor: Color,
+    depth: number,
+    maxBranching: number,
+    observation: AgentObservation,
+): AgentCandidate[] {
+    const scoredCandidates = orderMoves(moves)
+        .map((move) => {
+            const nextState = applyMove(gameState, {
+                from: move.from,
+                to: move.to,
+                promotion: move.promotion,
+            })
+            const score = minimax(
+                nextState,
+                depth - 1,
+                Number.NEGATIVE_INFINITY,
+                Number.POSITIVE_INFINITY,
+                rootColor,
+                maxBranching,
+            )
+
+            return {
+                move,
+                san: move.san,
+                score,
+                reason: describeMove(move),
+                plan: '',
+                risk: '',
+            }
+        })
+        .sort((left, right) => right.score - left.score)
+
+    return scoredCandidates.map((candidate, index) => ({
+        ...candidate,
+        plan: describeCandidatePlan(candidate, observation),
+        risk: describeCandidateRisk(candidate, index, scoredCandidates),
+    }))
 }
 
 function chooseGoal(
@@ -464,12 +576,45 @@ function buildMemoryNotes(
     return notes
 }
 
-function buildPrincipalVariation(
+function buildVisualCues(
+    selectedMove: LegalMoveOption,
+    principalLine: AgentLineMove[],
+): AgentVisualCue[] {
+    const cues: AgentVisualCue[] = [
+        {
+            square: selectedMove.from,
+            kind: 'chosen',
+            label: `Agent xuất phát từ ${formatSquare(selectedMove.from)}`,
+        },
+        {
+            square: selectedMove.to,
+            kind: 'chosen',
+            label: `Agent chọn ${selectedMove.san}`,
+        },
+    ]
+
+    for (let index = 1; index < principalLine.length; index += 1) {
+        const move = principalLine[index]
+        const kind = index % 2 === 1 ? 'risk' : 'plan'
+
+        cues.push({
+            square: move.to,
+            kind,
+            label: kind === 'risk'
+                ? `Phản ứng cần chú ý: ${move.san}`
+                : `Kế hoạch tiếp theo: ${move.san}`,
+        })
+    }
+
+    return cues
+}
+
+function buildPrincipalLine(
     gameState: GameState,
     firstMove: LegalMoveOption,
     rootColor: Color,
-): string[] {
-    const line = [firstMove.san]
+): AgentLineMove[] {
+    const line: AgentLineMove[] = [mapLineMove(firstMove)]
     let currentState = applyMove(gameState, {
         from: firstMove.from,
         to: firstMove.to,
@@ -509,7 +654,7 @@ function buildPrincipalVariation(
             break
         }
 
-        line.push(bestMove.san)
+        line.push(mapLineMove(bestMove))
         currentState = applyMove(currentState, {
             from: bestMove.from,
             to: bestMove.to,
@@ -518,6 +663,14 @@ function buildPrincipalVariation(
     }
 
     return line
+}
+
+function mapLineMove(move: LegalMoveOption): AgentLineMove {
+    return {
+        san: move.san,
+        from: move.from,
+        to: move.to,
+    }
 }
 
 function minimax(
@@ -773,6 +926,14 @@ function hashString(value: string): number {
     }
 
     return hash
+}
+
+function areSquaresEqual(left: Square, right: Square): boolean {
+    return left.row === right.row && left.col === right.col
+}
+
+function formatSquare(square: Square): string {
+    return `${String.fromCharCode(97 + square.col)}${8 - square.row}`
 }
 
 function describeMove(move: LegalMoveOption): string {

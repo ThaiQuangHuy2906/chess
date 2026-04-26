@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
     createCoachInsight,
+    createMoveGuidance,
     selectAgentMove,
     type AgentDecision,
     type AgentTrace,
     type AiLevel,
     type CoachInsight,
+    type MoveGuidance,
 } from './ai'
 import {
     applyMove,
@@ -65,6 +67,14 @@ interface PendingPromotion {
     color: Piece['color']
 }
 
+type AgentVisualCue = AgentTrace['visualCues'][number]
+type GuidanceCue = MoveGuidance['destinationCues'][number]
+
+interface SquareBadge {
+    kind: 'agent' | 'guidance' | 'risk' | 'last'
+    label: string
+}
+
 function App() {
     const [gameState, setGameState] = useState(createInitialGameState)
     const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
@@ -99,6 +109,17 @@ function App() {
     const coachInsight = useMemo(
         () => (isAiTurn ? null : buildCoachInsight(gameState, aiLevel)),
         [aiLevel, gameState, isAiTurn],
+    )
+    const moveGuidance = useMemo(
+        () =>
+            selectedSquare && selectedPiece?.color === gameState.turn && !isAiTurn
+                ? createMoveGuidance(gameState, {
+                    color: gameState.turn,
+                    level: aiLevel,
+                    from: selectedSquare,
+                })
+                : null,
+        [aiLevel, gameState, isAiTurn, selectedPiece, selectedSquare],
     )
     const activeTrace = lastAgentDecision?.trace ?? coachInsight?.trace ?? null
 
@@ -312,6 +333,7 @@ function App() {
                                             ? 'Ván đã kết thúc. Bấm Ván mới để chơi lại.'
                                             : 'Chọn một quân của bên đang tới lượt để xem nước hợp lệ.'}
                         </p>
+                        {moveGuidance ? <MoveGuidancePanel guidance={moveGuidance} /> : null}
                     </section>
 
                     <section className="panel info-panel">
@@ -350,11 +372,25 @@ function App() {
                                 const isLegalMove = legalMoves.some((move) =>
                                     areSquaresEqual(move.to, square),
                                 )
+                                const agentCue = findAgentVisualCue(activeTrace, square)
+                                const guidanceCue = findGuidanceCue(moveGuidance, square)
+                                const isLastMove = gameState.lastMove
+                                    ? areSquaresEqual(gameState.lastMove.from, square) ||
+                                    areSquaresEqual(gameState.lastMove.to, square)
+                                    : false
+                                const squareBadge = buildSquareBadge(
+                                    agentCue,
+                                    guidanceCue,
+                                    isLastMove,
+                                )
                                 const classes = [
                                     'square',
                                     isLightSquare ? 'square--light' : 'square--dark',
                                     isSelected ? 'square--selected' : '',
                                     isLegalMove ? 'square--legal' : '',
+                                    isLastMove ? 'square--last-move' : '',
+                                    agentCue ? `square--agent-${agentCue.kind}` : '',
+                                    guidanceCue ? `square--guidance-${guidanceCue.kind}` : '',
                                 ]
                                     .filter(Boolean)
                                     .join(' ')
@@ -374,6 +410,11 @@ function App() {
                                                 {PIECE_SYMBOLS[piece.color][piece.type]}
                                             </span>
                                         ) : null}
+                                        {squareBadge ? (
+                                            <span className={`square-cue square-cue--${squareBadge.kind}`}>
+                                                {squareBadge.label}
+                                            </span>
+                                        ) : null}
                                     </button>
                                 )
                             }),
@@ -384,6 +425,11 @@ function App() {
                         Luật cờ đầy đủ: nhập thành, bắt tốt qua đường, ký hiệu SAN và
                         phong cấp.
                     </p>
+                    <div className="board-legend" aria-label="Chú giải màu trên bàn cờ">
+                        <span><b className="legend-dot legend-dot--agent" />AI/Kế hoạch</span>
+                        <span><b className="legend-dot legend-dot--guidance" />Nước nên cân nhắc</span>
+                        <span><b className="legend-dot legend-dot--risk" />Phản ứng/rủi ro</span>
+                    </div>
 
                     {pendingPromotion ? (
                         <div className="promotion-chooser" role="group" aria-label="Chọn quân phong cấp">
@@ -496,6 +542,26 @@ function CoachPanel({
     )
 }
 
+function MoveGuidancePanel({ guidance }: { guidance: MoveGuidance }) {
+    return (
+        <div className="move-guidance">
+            <div className="coach-best coach-best--guidance">
+                <span className="label">Gợi ý cho quân này</span>
+                <strong>{guidance.recommendedMove.san}</strong>
+            </div>
+            <p className="coach-copy">{guidance.summary}</p>
+            <div className="candidate-list" role="list" aria-label="Gợi ý nước đi cho quân đang chọn">
+                {guidance.candidateAdvice.map((candidate) => (
+                    <div key={candidate.san} className="candidate-row candidate-row--guidance" role="listitem">
+                        <span>{candidate.san}</span>
+                        <span>{formatScore(candidate.score)}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 function AgentTracePanel({
     trace,
     playedMove,
@@ -559,6 +625,56 @@ function AgentTracePanel({
             </div>
         </div>
     )
+}
+
+function findAgentVisualCue(
+    trace: AgentTrace | null,
+    square: Square,
+): AgentVisualCue | null {
+    return trace?.visualCues.find((cue) => areSquaresEqual(cue.square, square)) ?? null
+}
+
+function findGuidanceCue(
+    guidance: MoveGuidance | null,
+    square: Square,
+): GuidanceCue | null {
+    return guidance?.destinationCues.find((cue) => areSquaresEqual(cue.square, square)) ?? null
+}
+
+function buildSquareBadge(
+    agentCue: AgentVisualCue | null,
+    guidanceCue: GuidanceCue | null,
+    isLastMove: boolean,
+): SquareBadge | null {
+    if (guidanceCue) {
+        if (guidanceCue.kind === 'recommended') {
+            return { kind: 'guidance', label: 'Nên' }
+        }
+
+        if (guidanceCue.kind === 'risky') {
+            return { kind: 'risk', label: 'Rủi ro' }
+        }
+
+        return { kind: 'guidance', label: 'Xem' }
+    }
+
+    if (agentCue) {
+        if (agentCue.kind === 'risk') {
+            return { kind: 'risk', label: 'Đáp' }
+        }
+
+        if (agentCue.kind === 'plan') {
+            return { kind: 'agent', label: 'Kế' }
+        }
+
+        return { kind: 'agent', label: 'AI' }
+    }
+
+    if (isLastMove) {
+        return { kind: 'last', label: 'Vừa' }
+    }
+
+    return null
 }
 
 function buildCoachInsight(
